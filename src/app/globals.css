@@ -1,22 +1,19 @@
 @import "tailwindcss";
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-
 :root {
-  --background: #ffffff;
-  --foreground: #111827;
+  --background: #fafaf7;
+  --foreground: #1a1a1a;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: #f8fafc;
-  color: var(--foreground);
+  background-color: #fafaf7;
+  color: #1a1a1a;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   font-size: 16px;
   line-height: 1.6;
@@ -29,7 +26,7 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #f1f3ee;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -41,11 +38,36 @@ body {
   background: #94a3b8;
 }
 
-/* Animation keyframes */
-@keyframes fadeInUp {
+/* Pulsing Green Dot Animation */
+@keyframes pulse-green {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(22, 163, 74, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+  }
+}
+
+.pulsing-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #16a34a;
+  border-radius: 50%;
+  display: inline-block;
+  animation: pulse-green 2s infinite;
+}
+
+/* Slide-in animation for Activity Feed items */
+@keyframes feedSlideIn {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(-12px);
   }
   to {
     opacity: 1;
@@ -53,109 +75,17 @@ body {
   }
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.animate-feed-slide-in {
+  animation: feedSlideIn 0.4s ease-out forwards;
 }
 
-@keyframes slideInRight {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes pulse-ring {
-  0% {
-    transform: scale(0.8);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1.4);
-    opacity: 0;
-  }
-}
-
-@keyframes scan-line {
-  0% { top: 0; }
-  50% { top: calc(100% - 4px); }
-  100% { top: 0; }
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-.animate-fade-in-up {
-  animation: fadeInUp 0.5s ease-out forwards;
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.3s ease-out forwards;
-}
-
-.animate-slide-in-right {
-  animation: slideInRight 0.4s ease-out forwards;
+/* Camera scan line */
+@keyframes scanLine {
+  0% { top: 5%; }
+  50% { top: 90%; }
+  100% { top: 5%; }
 }
 
 .animate-scan-line {
-  animation: scan-line 2.5s ease-in-out infinite;
-}
-
-.skeleton {
-  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: 8px;
-}
-
-/* Stagger children animation */
-.stagger-children > * {
-  animation: fadeInUp 0.5s ease-out forwards;
-  opacity: 0;
-}
-
-.stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
-.stagger-children > *:nth-child(2) { animation-delay: 0.1s; }
-.stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
-.stagger-children > *:nth-child(4) { animation-delay: 0.2s; }
-.stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
-.stagger-children > *:nth-child(6) { animation-delay: 0.3s; }
-.stagger-children > *:nth-child(7) { animation-delay: 0.35s; }
-.stagger-children > *:nth-child(8) { animation-delay: 0.4s; }
-
-/* Toast animation */
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateX(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes toast-out {
-  from {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateX(100%);
-  }
-}
-
-.toast-enter {
-  animation: toast-in 0.4s ease-out forwards;
-}
-
-.toast-exit {
-  animation: toast-out 0.3s ease-in forwards;
+  animation: scanLine 2.2s ease-in-out infinite;
 }
