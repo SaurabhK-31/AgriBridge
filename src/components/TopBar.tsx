@@ -12,9 +12,9 @@ const pageTitles: Record<string, string> = {
   '/trust-score': 'Trust Score Breakdown',
 };
 
-export default function TopBar() {
+export default function TopBar({ title: propTitle, role: propRole }: { title?: string; role?: string }) {
   const pathname = usePathname();
-  const title = pageTitles[pathname] || 'Dashboard';
+  const title = propTitle || pageTitles[pathname] || 'Dashboard';
   const [showNotifications, setShowNotifications] = useState(false);
 
   return (

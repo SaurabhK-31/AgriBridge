@@ -1,0 +1,181 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String             @id @default(uuid())
+  name          String
+  email         String             @unique
+  password      String
+  role          String             @default("FARMER") // FARMER, EXPORTER, CONSUMER, REGULATOR, ADMIN
+  phone         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  farmerProfile FarmerProfile?
+  batches       Batch[]            @relation("FarmerBatches")
+  shipments     Shipment[]         @relation("ExporterShipments")
+  events        SupplyChainEvent[]
+}
+
+model FarmerProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farmName  String
+  location  String
+  state     String
+  district  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  category    String
+  description String
+  batches     Batch[]
+}
+
+model Batch {
+  id                       String             @id @default(uuid())
+  batchCode                String             @unique
+  farmerId                 String
+  farmer                   User               @relation("FarmerBatches", fields: [farmerId], references: [id])
+  productId                String
+  product                  Product            @relation(fields: [productId], references: [id])
+  quantity                 Float
+  harvestDate              DateTime
+  location                 String
+  status                   String             @default("Registered")
+  blockchainHash           String
+  blockchainTransactionHash String?
+  trustScore               Int                @default(85)
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+
+  events                   SupplyChainEvent[]
+  certificates             Certificate[]
+  shipments                Shipment[]
+  fraudAlerts              FraudAlert[]
+  trustScoreDetails        TrustScore?
+  temperatureLogs          TemperatureLog[]
+}
+
+model SupplyChainEvent {
+  id                       String   @id @default(uuid())
+  batchId                  String
+  batch                    Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  eventType                String
+  actorId                  String?
+  actor                    User?    @relation(fields: [actorId], references: [id])
+  location                 String
+  timestamp                DateTime @default(now())
+  metadata                 String?
+  blockchainTransactionHash String?
+}
+
+model Certificate {
+  id                 String   @id @default(uuid())
+  batchId            String
+  batch              Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  certificateType    String
+  fileUrl            String
+  fileHash           String
+  issuer             String
+  issueDate          DateTime @default(now())
+  expiryDate         DateTime
+  verificationStatus String   @default("VERIFIED")
+  createdAt          DateTime @default(now())
+}
+
+model Shipment {
+  id                 String            @id @default(uuid())
+  shipmentCode       String            @unique
+  batchId            String
+  batch              Batch             @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  exporterId         String
+  exporter           User              @relation("ExporterShipments", fields: [exporterId], references: [id])
+  destinationCountry String
+  quantity           Float
+  status             String            @default("Pending")
+  riskScore          Int               @default(15)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  complianceChecks   ComplianceCheck[]
+  fraudAlerts        FraudAlert[]
+  temperatureLogs    TemperatureLog[]
+}
+
+model ComplianceCheck {
+  id          String   @id @default(uuid())
+  shipmentId  String
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  country     String
+  requirement String
+  status      String   @default("PASSED")
+  explanation String
+  source      String
+  createdAt   DateTime @default(now())
+}
+
+model FraudAlert {
+  id          String    @id @default(uuid())
+  batchId     String?
+  batch       Batch?    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  shipmentId  String?
+  shipment    Shipment? @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  fraudType   String
+  severity    String    @default("HIGH")
+  description String
+  confidence  Float     @default(0.95)
+  status      String    @default("OPEN")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model TrustScore {
+  id                 String   @id @default(uuid())
+  batchId            String   @unique
+  batch              Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  blockchainScore    Int      @default(20)
+  certificateScore   Int      @default(20)
+  coldChainScore     Int      @default(20)
+  inspectionScore    Int      @default(20)
+  complianceScore    Int      @default(10)
+  qualityScore       Int      @default(10)
+  finalScore         Int      @default(90)
+  factorsJson        String
+  explanation        String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model TemperatureLog {
+  id          String    @id @default(uuid())
+  shipmentId  String?
+  shipment    Shipment? @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  batchId     String?
+  batch       Batch?    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  temperature Float
+  location    String
+  timestamp   DateTime  @default(now())
+}
+
+model AiAgentLog {
+  id          String   @id @default(uuid())
+  agentName   String
+  task        String
+  input       String
+  output      String
+  confidence  Float    @default(0.95)
+  status      String   @default("COMPLETED")
+  createdAt   DateTime @default(now())
+}

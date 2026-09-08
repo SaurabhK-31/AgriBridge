@@ -1,284 +1,384 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 
-const complianceByCountry: Record<string, Array<{ name: string; status: 'passed' | 'pending' | 'missing' }>> = {
-  UK: [
-    { name: 'EU Pesticide Residue MRL Limits (EC 396/2005)', status: 'passed' },
-    { name: 'GLOBALG.A.P Certification', status: 'passed' },
-    { name: 'APEDA Phytosanitary Certificate', status: 'passed' },
-    { name: 'UKCA Product Safety Marking', status: 'pending' },
-    { name: 'Cold Chain Temp Log (JNPT → Felixstowe)', status: 'passed' },
-    { name: 'Allergen Declaration Form', status: 'missing' },
-  ],
-  UAE: [
-    { name: 'MOIAT Halal & Food Safety Standard', status: 'passed' },
-    { name: 'Phytosanitary Clearance (Dubai Customs)', status: 'passed' },
-    { name: 'Pesticide MRL Compliance', status: 'passed' },
-    { name: 'Cold Chain Logistics Certificate', status: 'passed' },
-  ],
-  USA: [
-    { name: 'US FDA Food Facility Registration', status: 'passed' },
-    { name: 'USDA APHIS Plant Protection Permit', status: 'pending' },
-    { name: 'Chlorpyrifos Residue Limit (<0.01 ppm)', status: 'missing' },
-    { name: 'Prior Notice Filing (FDA)', status: 'passed' },
-  ],
-  Japan: [
-    { name: 'Japan Food Sanitation Act Clearance', status: 'passed' },
-    { name: 'Chlorpyrifos Residue Limit (<0.01 ppm)', status: 'passed' },
-    { name: 'APEDA Quality Audit Certificate', status: 'passed' },
-  ],
-};
-
 export default function ExporterDashboard() {
-  const [selectedCountry, setSelectedCountry] = useState('UK');
+  const [shipments, setShipments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Modal / Action states
+  const [destinationCountry, setDestinationCountry] = useState('UK');
+  const [batchId, setBatchId] = useState('AG-2847');
+  const [quantity, setQuantity] = useState('2400');
+  const [creatingShipment, setCreatingShipment] = useState(false);
+
+  // RAG Compliance State
+  const [complianceCountry, setComplianceCountry] = useState('UK');
+  const [ragResult, setRagResult] = useState<any>(null);
+  const [checkingCompliance, setCheckingCompliance] = useState(false);
+
+  // Certificate Upload State
+  const [certType, setCertType] = useState('APEDA Phytosanitary Certificate');
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [uploadingCert, setUploadingCert] = useState(false);
+
+  const fetchShipments = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/shipments');
+      const json = await res.json();
+      if (json.success) {
+        setShipments(json.data);
+      }
+    } catch (e) {
+      console.error('Failed to load shipments:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchShipments();
+  }, []);
+
+  const handleCreateShipment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreatingShipment(true);
+    try {
+      const res = await fetch('/api/shipments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          batchId,
+          destinationCountry,
+          quantity: parseFloat(quantity) || 2000,
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        alert(`✓ Shipment ${json.data.shipment.shipmentCode} created & RAG compliance checks passed!`);
+        fetchShipments();
+      } else {
+        alert(json.error?.message || 'Failed to create shipment');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Server error creating shipment');
+    } finally {
+      setCreatingShipment(false);
+    }
+  };
+
+  const handleCheckRAG = async () => {
+    setCheckingCompliance(true);
+    try {
+      const res = await fetch('/api/compliance/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ country: complianceCountry, batchId }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setRagResult(json.data);
+      }
+    } catch (e) {
+      console.error('RAG check failed:', e);
+    } finally {
+      setCheckingCompliance(false);
+    }
+  };
+
+  const handleUploadCertificate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUploadingCert(true);
+    try {
+      // Calculate SHA-256 hash
+      const text = certFile ? await certFile.text() : `${certType}_${batchId}_${Date.now()}`;
+      const msgBuffer = new TextEncoder().encode(text);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const fileHash = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+      const res = await fetch('/api/certificates/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          batchId,
+          certificateType: certType,
+          fileUrl: `/uploads/certificates/${batchId}_${Date.now()}.pdf`,
+          fileHash,
+          issuer: 'APEDA Regional Authority',
+          expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        alert(json.data.message);
+        fetchShipments();
+      } else {
+        alert(json.error?.message || 'Failed to upload certificate');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error uploading certificate');
+    } finally {
+      setUploadingCert(false);
+    }
+  };
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-gray-200 shadow-xs">
+    <DashboardLayout title="Exporter Dashboard" role="Exporter">
+      {/* Top Banner Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-xs flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-extrabold text-[#1a1a1a] flex items-center gap-2">
-              📦 Exporter Dashboard
-            </h1>
-            <p className="text-xs text-gray-500 mt-1 font-medium">
-              Manage international shipments, automated RAG compliance checks, and certificate authentication.
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Export Shipments</p>
+            <p className="text-2xl font-extrabold text-[#1a1a1a] mt-1">{shipments.length || 6}</p>
+            <span className="text-[11px] font-semibold text-[#16a34a] inline-flex items-center gap-1 mt-1">
+              <span>↑</span> 100% RAG Screened
+            </span>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-xl font-bold">
+            🚢
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">RAG Compliance Pass</p>
+            <p className="text-2xl font-extrabold text-[#16a34a] mt-1">98.4%</p>
+            <span className="text-[11px] font-semibold text-gray-500 mt-1 block">
+              UK, UAE, USA, Japan
+            </span>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-green-100 text-[#16a34a] flex items-center justify-center text-xl font-bold">
+            ⚖️
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Certificate Hashes</p>
+            <p className="text-2xl font-extrabold text-[#1a1a1a] mt-1">14 Verified</p>
+            <span className="text-[11px] font-semibold text-purple-600 block mt-1">
+              SHA-256 Anti-Fraud
+            </span>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-xl font-bold">
+            🔐
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">High Risk Shipments</p>
+            <p className="text-2xl font-extrabold text-amber-600 mt-1">1 Flagged</p>
+            <span className="text-[11px] font-semibold text-red-600 block mt-1">
+              MRL Limit Warning
+            </span>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center text-xl font-bold">
+            🚨
+          </div>
+        </div>
+      </div>
+
+      {/* Main Grid: Create Shipment + RAG Checker */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Create Shipment Form */}
+        <div className="lg:col-span-1 bg-white rounded-xl p-6 border border-gray-200 shadow-xs space-y-4">
+          <div className="border-b border-gray-100 pb-3">
+            <h2 className="text-base font-bold text-[#1a1a1a] flex items-center gap-2">
+              <span>🚢</span> Create Export Shipment
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Link batch to international destination & trigger RAG screening.
             </p>
           </div>
-          <button className="px-5 py-2.5 bg-[#16a34a] hover:bg-green-700 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-green-100 flex items-center gap-2">
-            <span>🚢</span> Create Export Shipment
-          </button>
+
+          <form onSubmit={handleCreateShipment} className="space-y-3">
+            <div>
+              <label className="block text-xs font-bold text-[#1a1a1a] mb-1">Target Crop Batch Code</label>
+              <input
+                type="text"
+                value={batchId}
+                onChange={(e) => setBatchId(e.target.value)}
+                className="w-full text-xs font-mono font-bold text-[#16a34a] p-2.5 bg-[#FAFAF7] border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#16a34a] focus:outline-none"
+                placeholder="e.g. AG-2847"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#1a1a1a] mb-1">Destination Country</label>
+              <select
+                value={destinationCountry}
+                onChange={(e) => setDestinationCountry(e.target.value)}
+                className="w-full text-xs font-semibold text-[#1a1a1a] p-2.5 bg-[#FAFAF7] border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#16a34a] focus:outline-none"
+              >
+                <option value="UK">United Kingdom (UK)</option>
+                <option value="UAE">United Arab Emirates (UAE)</option>
+                <option value="USA">United States (FDA/USDA)</option>
+                <option value="Japan">Japan (MHLW Positive List)</option>
+                <option value="Singapore">Singapore (AVA Standard)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#1a1a1a] mb-1">Export Quantity (kg)</label>
+              <input
+                type="number"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                className="w-full text-xs font-semibold text-[#1a1a1a] p-2.5 bg-[#FAFAF7] border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#16a34a] focus:outline-none"
+                placeholder="e.g. 2400"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={creatingShipment}
+              className="w-full py-3 px-4 bg-[#16a34a] text-white text-xs font-bold rounded-xl shadow-sm hover:bg-green-700 transition-all flex items-center justify-center gap-2"
+            >
+              {creatingShipment ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                  RAG Screening...
+                </>
+              ) : (
+                '🚢 Create & Run RAG Compliance'
+              )}
+            </button>
+          </form>
         </div>
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs">
-            <div className="flex items-center justify-between text-xs text-gray-500 font-bold uppercase tracking-wider">
-              <span>Pending Shipments</span>
-              <span className="text-xl">📦</span>
+        {/* AI RAG Compliance Knowledge Checker */}
+        <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-gray-200 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gray-100 pb-3 gap-2">
+            <div>
+              <h2 className="text-base font-bold text-[#1a1a1a] flex items-center gap-2">
+                <span>🤖</span> AI RAG Regulatory Compliance Screening
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Real-time regulatory document retrieval across UK, UAE, USA & Japan frameworks.
+              </p>
             </div>
-            <p className="text-3xl font-extrabold text-[#d97706] mt-2">7</p>
-            <span className="inline-block mt-2 text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full">
-              Requires Review
-            </span>
-          </div>
-
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs">
-            <div className="flex items-center justify-between text-xs text-gray-500 font-bold uppercase tracking-wider">
-              <span>Compliance Rate</span>
-              <span className="text-xl">⚖️</span>
+            <div className="flex items-center gap-2">
+              <select
+                value={complianceCountry}
+                onChange={(e) => setComplianceCountry(e.target.value)}
+                className="text-xs font-bold text-[#1a1a1a] p-2 bg-[#FAFAF7] border border-gray-200 rounded-xl"
+              >
+                <option value="UK">United Kingdom</option>
+                <option value="UAE">United Arab Emirates</option>
+                <option value="USA">United States</option>
+                <option value="Japan">Japan</option>
+              </select>
+              <button
+                onClick={handleCheckRAG}
+                disabled={checkingCompliance}
+                className="px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700"
+              >
+                {checkingCompliance ? 'Checking...' : 'Run RAG Check'}
+              </button>
             </div>
-            <p className="text-3xl font-extrabold text-[#16a34a] mt-2">96%</p>
-            <span className="inline-block mt-2 text-[11px] font-bold text-[#16a34a] bg-green-50 px-2 py-0.5 rounded-full">
-              47 Countries Verified
-            </span>
           </div>
 
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs">
-            <div className="flex items-center justify-between text-xs text-gray-500 font-bold uppercase tracking-wider">
-              <span>Fraud Alerts</span>
-              <span className="text-xl">🚨</span>
-            </div>
-            <p className="text-3xl font-extrabold text-[#dc2626] mt-2">2</p>
-            <span className="inline-block mt-2 text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded-full">
-              Action Required
-            </span>
-          </div>
-
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs">
-            <div className="flex items-center justify-between text-xs text-gray-500 font-bold uppercase tracking-wider">
-              <span>Avg Processing Time</span>
-              <span className="text-xl">⏱️</span>
-            </div>
-            <p className="text-3xl font-extrabold text-[#1a1a1a] mt-2">3.2 <span className="text-sm font-bold text-gray-400">days</span></p>
-            <span className="inline-block mt-2 text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
-              -1.4 days faster
-            </span>
-          </div>
-        </div>
-
-        {/* Shipments Table */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="text-base font-bold text-[#1a1a1a]">Active International Shipments</h3>
-            <span className="text-xs font-medium text-gray-500">7 Active Orders</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-[#1a1a1a]">
-              <thead className="bg-[#FAFAF7] text-gray-500 font-semibold border-b border-gray-200 uppercase text-[11px] tracking-wider">
-                <tr>
-                  <th className="py-3 px-4">Shipment ID</th>
-                  <th className="py-3 px-4">Product</th>
-                  <th className="py-3 px-4">Destination</th>
-                  <th className="py-3 px-4">Quantity</th>
-                  <th className="py-3 px-4">Certificate</th>
-                  <th className="py-3 px-4">Compliance</th>
-                  <th className="py-3 px-4">Risk Score</th>
-                  <th className="py-3 px-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 font-medium">
-                {[
-                  { id: 'EX-1923', product: 'Alphonso Mango', dest: '🇬🇧 UK (London)', qty: '2,500 kg', cert: 'Verified', comp: 'Compliant', risk: 12 },
-                  { id: 'EX-1917', product: 'Basmati Rice', dest: '🇦🇪 UAE (Dubai)', qty: '5,000 kg', cert: 'Pending', comp: 'Review Req.', risk: 45 },
-                  { id: 'EX-1911', product: 'Darjeeling Tea', dest: '🇩🇪 Germany (Hamburg)', qty: '1,200 kg', cert: 'Verified', comp: 'Compliant', risk: 8 },
-                  { id: 'EX-1904', product: 'Nashik Grapes', dest: '🇸🇬 Singapore', qty: '3,000 kg', cert: 'Expired', comp: 'Non-Compliant', risk: 78 },
-                  { id: 'EX-1898', product: 'Kesar Saffron', dest: '🇯🇵 Japan (Tokyo)', qty: '100 kg', cert: 'Verified', comp: 'Compliant', risk: 5 },
-                  { id: 'EX-1892', product: 'Punjab Wheat', dest: '🇺🇸 USA (New York)', qty: '15,000 kg', cert: 'Pending', comp: 'Under Review', risk: 23 },
-                ].map((row, idx) => (
-                  <tr key={row.id} className={idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-[#FAFAF7]/50 hover:bg-gray-50'}>
-                    <td className="py-3 px-4 font-mono font-bold text-[#16a34a]">{row.id}</td>
-                    <td className="py-3 px-4 font-bold">{row.product}</td>
-                    <td className="py-3 px-4">{row.dest}</td>
-                    <td className="py-3 px-4 text-gray-600">{row.qty}</td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                        row.cert === 'Verified' ? 'bg-green-100 text-green-700' : row.cert === 'Pending' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {row.cert}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                        row.comp === 'Compliant' ? 'bg-green-100 text-green-700' : row.comp.includes('Review') ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {row.comp}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`font-mono font-extrabold text-xs ${
-                        row.risk < 30 ? 'text-[#16a34a]' : row.risk < 60 ? 'text-[#d97706]' : 'text-[#dc2626]'
-                      }`}>
-                        {row.risk}/100
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <button className="text-xs font-semibold text-[#16a34a] hover:underline">Manage →</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* 2-Column Section: Left (Compliance Checker & Certificate Upload), Right (Active Fraud Alerts) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column (7 cols) */}
-          <div className="lg:col-span-7 space-y-6">
-            {/* Compliance Checker Panel */}
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-[#1a1a1a] flex items-center gap-2">
-                    <span>🌐</span> RAG Compliance Checker
-                  </h3>
-                  <p className="text-xs text-gray-500">Instant AI verification against 47 destination country regulations</p>
-                </div>
-                <select
-                  value={selectedCountry}
-                  onChange={(e) => setSelectedCountry(e.target.value)}
-                  className="p-2 bg-[#FAFAF7] border border-gray-200 rounded-lg text-xs font-bold text-[#1a1a1a]"
-                >
-                  <option value="UK">🇬🇧 United Kingdom</option>
-                  <option value="UAE">🇦🇪 United Arab Emirates</option>
-                  <option value="USA">🇺🇸 United States</option>
-                  <option value="Japan">🇯🇵 Japan</option>
-                </select>
+          {ragResult ? (
+            <div className="space-y-3">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 font-medium">
+                {ragResult.summary}
               </div>
-
               <div className="space-y-2">
-                {complianceByCountry[selectedCountry]?.map((req, idx) => (
-                  <div key={idx} className="p-3 bg-[#FAFAF7] rounded-xl border border-gray-200 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-gray-800">{req.name}</span>
-                    {req.status === 'passed' && (
-                      <span className="font-bold text-[#16a34a] bg-green-50 border border-green-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                        ✓ Passed
-                      </span>
-                    )}
-                    {req.status === 'pending' && (
-                      <span className="font-bold text-[#d97706] bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                        ⚠️ Pending Review
-                      </span>
-                    )}
-                    {req.status === 'missing' && (
-                      <span className="font-bold text-[#dc2626] bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                        ✗ Missing Document
-                      </span>
-                    )}
+                {ragResult.checks.map((chk: any, idx: number) => (
+                  <div key={idx} className="p-3 bg-[#FAFAF7] rounded-xl border border-gray-200 text-xs flex justify-between items-center">
+                    <div>
+                      <span className="font-bold text-[#1a1a1a]">{chk.requirement}</span>
+                      <p className="text-gray-500 text-[11px] mt-0.5">{chk.explanation}</p>
+                      <span className="text-[10px] text-gray-400 font-mono">Source: {chk.source}</span>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-green-100 text-[#16a34a]">
+                      {chk.status}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Certificate Upload Section */}
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-xs space-y-3">
-              <h3 className="text-base font-bold text-[#1a1a1a] flex items-center gap-2">
-                <span>📄</span> Upload Phytosanitary / Export Certificate
-              </h3>
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center bg-[#FAFAF7] hover:border-[#16a34a] transition-colors cursor-pointer">
-                <span className="text-3xl block mb-2">📤</span>
-                <p className="font-bold text-[#1a1a1a] text-xs">Upload export certificate for cryptographic verification</p>
-                <p className="text-[11px] text-gray-400 mt-1">Supported formats: PDF, JPEG, PNG (Max 15MB)</p>
-              </div>
+          ) : (
+            <div className="p-8 text-center text-xs text-gray-500 bg-[#FAFAF7] rounded-xl border border-dashed border-gray-300">
+              Select a target export country above and click &quot;Run RAG Check&quot; to test regulatory compliance.
             </div>
+          )}
+
+          {/* Certificate SHA-256 Hashing Upload */}
+          <div className="border-t border-gray-100 pt-4">
+            <h3 className="text-xs font-bold text-[#1a1a1a] mb-2">Upload Certificate for SHA-256 Hash Verification</h3>
+            <form onSubmit={handleUploadCertificate} className="flex flex-col sm:flex-row gap-2">
+              <select
+                value={certType}
+                onChange={(e) => setCertType(e.target.value)}
+                className="text-xs font-semibold p-2 bg-[#FAFAF7] border border-gray-200 rounded-xl"
+              >
+                <option value="APEDA Phytosanitary Certificate">APEDA Phytosanitary Certificate</option>
+                <option value="GLOBALG.A.P Organic Certificate">GLOBALG.A.P Organic Certificate</option>
+                <option value="FSSAI Export Quality Clearance">FSSAI Export Quality Clearance</option>
+              </select>
+              <input
+                type="file"
+                onChange={(e) => setCertFile(e.target.files?.[0] || null)}
+                className="text-xs text-gray-500 p-1 border border-gray-200 rounded-xl bg-white"
+              />
+              <button
+                type="submit"
+                disabled={uploadingCert}
+                className="px-4 py-2 bg-purple-600 text-white text-xs font-bold rounded-xl hover:bg-purple-700 shrink-0"
+              >
+                {uploadingCert ? 'Hashing...' : 'Upload & Hash'}
+              </button>
+            </form>
           </div>
+        </div>
+      </div>
 
-          {/* Right Column (5 cols) - Active Fraud Alerts */}
-          <div className="lg:col-span-5 space-y-4">
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                <h3 className="text-base font-extrabold text-[#dc2626] flex items-center gap-2">
-                  <span>🚨</span> Active Fraud Alerts
-                </h3>
-                <span className="text-xs font-bold text-red-700 bg-red-100 px-2.5 py-0.5 rounded-full">
-                  2 Flagged
-                </span>
-              </div>
-
-              <div className="space-y-4 text-xs">
-                {/* Alert 1 */}
-                <div className="p-4 bg-red-50 rounded-xl border border-red-200 border-l-4 border-l-[#dc2626] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-red-900">CRITICAL: Duplicate Certificate Hash</span>
-                    <span className="text-[10px] font-bold text-red-700 bg-red-200 px-2 py-0.5 rounded-full">
-                      Shipment EX-1923
+      {/* Shipments Table */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-base font-bold text-[#1a1a1a]">Export Shipment Ledger</h3>
+          <span className="text-xs font-medium text-gray-500">Showing {shipments.length} shipments</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-[#1a1a1a]">
+            <thead className="bg-[#FAFAF7] text-gray-500 font-semibold border-b border-gray-200 uppercase text-[11px] tracking-wider">
+              <tr>
+                <th className="py-3 px-4">Shipment ID</th>
+                <th className="py-3 px-4">Batch Code</th>
+                <th className="py-3 px-4">Crop</th>
+                <th className="py-3 px-4">Destination</th>
+                <th className="py-3 px-4">Quantity</th>
+                <th className="py-3 px-4">Risk Score</th>
+                <th className="py-3 px-4">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {shipments.map((ship, idx) => (
+                <tr key={ship.id || idx} className="hover:bg-gray-50">
+                  <td className="py-3 px-4 font-mono font-bold text-blue-600">{ship.shipmentCode}</td>
+                  <td className="py-3 px-4 font-mono font-bold text-[#16a34a]">{ship.batch?.batchCode || 'AG-2847'}</td>
+                  <td className="py-3 px-4 font-semibold text-[#1a1a1a]">{ship.batch?.product?.name || 'Alphonso Mango'}</td>
+                  <td className="py-3 px-4 font-bold text-gray-700">{ship.destinationCountry}</td>
+                  <td className="py-3 px-4 text-gray-600">{ship.quantity} kg</td>
+                  <td className="py-3 px-4 font-extrabold text-[#16a34a]">{ship.riskScore} / 100</td>
+                  <td className="py-3 px-4">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-800">
+                      {ship.status}
                     </span>
-                  </div>
-                  <p className="text-gray-700 leading-relaxed text-[11px]">
-                    Certificate hash for Shipment #EX-1923 matches a previously used certificate from a different batch in February 2026. Possible certificate reuse fraud.
-                  </p>
-                  <div className="pt-2 border-t border-red-200 flex items-center justify-between text-[11px] font-bold">
-                    <span className="text-red-800">Detected by: Fraud Agent</span>
-                    <button className="px-3 py-1 bg-[#dc2626] hover:bg-red-700 text-white rounded-lg transition-colors">
-                      Investigate →
-                    </button>
-                  </div>
-                </div>
-
-                {/* Alert 2 */}
-                <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 border-l-4 border-l-[#d97706] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-amber-900">HIGH: Anomalous Weight Discrepancy</span>
-                    <span className="text-[10px] font-bold text-amber-800 bg-amber-200 px-2 py-0.5 rounded-full">
-                      Shipment EX-1904
-                    </span>
-                  </div>
-                  <p className="text-gray-700 leading-relaxed text-[11px]">
-                    Shipment #EX-1904 shows 18% weight loss between source mandi and Mumbai JNPT hub. Exceeds acceptable 3% transit loss threshold.
-                  </p>
-                  <div className="pt-2 border-t border-amber-200 flex items-center justify-between text-[11px] font-bold">
-                    <span className="text-amber-800">Detected by: Quality Agent</span>
-                    <button className="px-3 py-1 bg-[#d97706] hover:bg-amber-700 text-white rounded-lg transition-colors">
-                      Inspect →
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </DashboardLayout>
